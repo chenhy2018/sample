@@ -10,7 +10,7 @@
 #include "QnMqtt.h"
 #include "QnRtmp.h"
 
-#define HOST "180.97.147.170"
+#define HOST "47.105.118.51"
 
 QnMqttRegisterContext gMqttCtx;
 static int gMqttState = 1;
@@ -54,6 +54,7 @@ int QnMqttInit()
     return QN_SUCCESS;
 }
 
+//去初始化
 void QnMqttRelease()
 {
     free(gMqttCtx.id);
@@ -173,10 +174,11 @@ static void *MqttHandler(void *param)
         pthread_mutex_lock( &gMqttMutex );
         memset( log, 0, sizeof(log) );
         memset( strTotalBytes, 0, sizeof(strTotalBytes) );
-        strcat( log, "[ MQHB ][ ");
-        itoa( gTotalSendBytes, strTotalBytes );
+        strcat(log, "001 "); 
+        strcat( log, "MQHB "); 
+       itoa( gTotalSendBytes, strTotalBytes );
         strcat( log, strTotalBytes );
-        strcat( log, " ]");
+        strcat( log, " ");
         pthread_mutex_unlock( &gMqttMutex );
         DBG_LOG("strTotalBytes = %s\n", strTotalBytes);
         ret =  Report( gMqttCtx.accountId, gTopic, log,  strlen(log) );
