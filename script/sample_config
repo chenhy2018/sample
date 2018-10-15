@@ -1,0 +1,117 @@
+
+mainmenu "XXX SDK Sample Configuration"
+
+menu "Config Arch"
+choice
+	prompt "Arch"
+	default arm
+	help
+		Select the Chip Arch.
+config ARCH_ARM
+	bool "ARM"
+config ARCH_MIPS
+	bool "MIPS"
+endchoice
+endmenu
+
+menu "Config Platform Chip"
+choice 
+	prompt "Platform"
+	default HISI
+	help 
+		Select the Platform target.
+
+config PLATFORM_HISI
+	bool "HISI"
+	depends on ARCH_ARM
+config PLATFORM_MSTAR
+	bool "MSTAR" 
+	depends on ARCH_ARM
+
+config PLATFORM_INGENIC
+	bool "INGENIC"
+	depends on ARCH_MIPS
+
+endchoice
+
+
+choice 
+	prompt "Chip"
+	default HI3516A
+	help 
+		Select the Chip target.
+config CHIP_HI3516A
+	bool "HI3516A"
+	depends on PLATFORM_HISI
+config CHIP_HI3518E
+	bool "HI3518E"
+	depends on PLATFORM_HISI
+
+config CHIP_MSC313E
+	bool "MSC313E"
+	depends on PLATFORM_MSTAR
+config CHIP_MSC316D
+	bool "MSC316D"
+	depends on PLATFORM_MSTAR
+
+config CHIP_INGT20
+	bool "INGT20"
+	depends on PLATFORM_INGENIC
+ 
+endchoice
+
+endmenu
+menu "Config Build SoftWare"
+choice
+	prompt "Config Build Mode"
+	default RELEASE_SAMPLE
+	help 
+		Select the Build target.
+config RELEASE_SAMPLE
+	bool "RELEASE_SAMPLE"
+config DEBUG_SAMPLE
+	bool "DEBUG_SAMPLE"
+endchoice
+
+config HI3516A_TOOLCHAIN_DIR
+	string "Hi3516a Toolchain Dir"
+	default "/home/samba/iWork/opt/hisi-linux-nptl/arm-hisiv300-linux/bin"
+	depends on CHIP_HI3516A
+	help 
+		Hi3516a Toolchain Dir.
+config HI3518E_TOOLCHAIN_DIR
+	string "Hi3518e Toolchain Dir"
+	default "/home/samba/iWork/opt/hisi-linux-nptl/arm-hisiv100-linux/bin"
+	depends on  CHIP_HI3518E
+	help
+		Hi3518e Toolchain Dir.
+
+config MSCXX_TOOLCHAIN_DIR
+	string "MSC313E Toolchain Dir"
+	default "/home/samba/iWork/opt/arm-linux-gnueabihf-4.8.3-201404/bin"
+	depends on CHIP_MSC313E || CHIP_MSC316D
+	help
+		Mstar series chip Toolchain Dir.
+config INGT20_TOOLCHAIN_DIR
+	string "INGT20 Toolchain Dir"
+	default "/home/samba/iWork/opt/mips-gcc472-glibc216-32bit/bin"
+	depends on CHIP_INGT20
+	help
+		INGT20 Toolchain Dir.
+
+config BUILD_VER
+	string "Software version"
+	default "Vx.x.xT_181012"
+	help 
+		Software version
+endmenu
+
+menu "Configure Modules"
+config MODULE_RTMP
+	bool "MODULE_RTMP"
+config MODULE_TSUPLOAD
+	bool "MODULE_TSUPLOAD"
+config MODULE_RTP
+	bool "MODULE_RTP"
+
+endmenu
