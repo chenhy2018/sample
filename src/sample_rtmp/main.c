@@ -1,71 +1,104 @@
-#include <unistd.h>
 #include <stdio.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/time.h>
+#include <stdlib.h>
 #include "QnCommon.h"
-#include "QnRtmp.h"
-#include "ajSdk.h"
-#include "QnMqtt.h"
-#include "main.h"
+// #include "QnConf.h"
+// #include "QnSysConf.h"
+// #include "QnMqttConf.h"
+// #include "QnRtmpConf.h"
+// #include "QnMqttConn.h"
+#include "AjFrameHandlerSDK.h"
+#include "QnRtmpFrameHandler.h"
+#include "QnBeat.h"
 
-int main()
+// struct SampleCfg
+// {
+//     struct SysConf *syscfg;;
+//     struct MqttConf *mqttcfg;
+//     struct RtmpConf *rtmpcfg;
+// }gSampleCfg;
+
+// static int cfg_init(void)
+// {
+//     gSampleCfg.syscfg = NewSysConf(NULL);
+//     if (gSampleCfg.syscfg) {
+//         QnDemoPrint(DEMO_ERR, "New SysConf fail.\n");
+//         return QN_FAIL;       
+//     }
+//     gSampleCfg.mqttcfg = NewMqttConf(&gSampleCfg.syscfg->base);
+//     if (gSampleCfg.mqttcfg) {
+//         QnDemoPrint(DEMO_ERR, "New MqttConf fail.\n");
+//         goto RELEASE_SYSCONF;
+//     }
+//     gSampleCfg.rtmpcfg = NewRtmpConf(&gSampleCfg.mqttcfg->base);
+//     if (gSampleCfg.rtmpcfg) {
+//         QnDemoPrint(DEMO_ERR, "New RtmpConf fail.\n");
+//         goto RELEASE_MQTTCONF;
+//     }
+//     gSampleCfg.rtmpcfg->base.ops->GetConf(&gSampleCfg.rtmpcfg->base);
+//     return QN_SUCCESS;
+
+// RELEASE_MQTTCONF:
+//     DeleteMqttConf(gSampleCfg.mqttcfg);
+// RELEASE_SYSCONF:
+//     DeleteSysConf(gSampleCfg.syscfg);
+//     return QN_FAIL;
+// }
+
+// void cfg_uninit(void)
+// {
+//     DeleteRtmpConf(gSampleCfg.rtmpcfg);
+//     DeleteMqttConf(gSampleCfg.mqttcfg);
+//     DeleteSysConf(gSampleCfg.syscfg);
+// }
+
+
+int main(void)
 {
-    /* initial signal set */
-    //信号处理初始化
-    int sig;
-    sigset_t set;
-    sigemptyset(&set);
-    sigaddset(&set, SIGALRM);
-    sigaddset(&set, SIGPIPE);
-    sigaddset(&set, SIGUSR1);
-    sigaddset(&set, SIGUSR2);
-    pthread_sigmask(SIG_BLOCK, &set, NULL);
-	
-	//InitSigHandler();
-    //初始化mqtt log互斥锁
-    InitMqttMutex();
-    //Aj相关初始化
-	AjInit();
-    //Qn mqtt初始化
-	QnMqttInit();
-    //Qn rtmp初始化 
-	RtmpInit();
+    int ret = QN_FAIL;
 
-    //start
-	QnMqttStart();
-	AjStart();
-	
-	while(1) {
-        sigwait(&set, &sig);
-        switch (sig) {
-        case SIGALRM:
-            QnDemoPrint(DEMO_NOTICE, "SIGALRM catch.");
-            continue;
-        case SIGPIPE:
-            QnDemoPrint(DEMO_NOTICE, "SIGPIPE catch.");
-            continue;
-        case SIGUSR1:
-            QnDemoPrint(DEMO_NOTICE, "SIGUSR1 catch.");
-            continue;
-        case SIGUSR2:
-            QnDemoPrint(DEMO_NOTICE, "SIGUSR2 catch.");
-            continue;
-        case SIGINT:
-            QnDemoPrint(DEMO_NOTICE, "SIGINT catch, exiting...");
-			RtmpRelease();
-			AjStop();
-			AjRelease();
-            break;
-        default:
-            QnDemoPrint(DEMO_NOTICE, "unmasked signal %d catch.", sig);
-            continue;
-        }
-	}
-		
-    DestroyMqttMutex();
-    
+    QnDemoPrint(DEMO_ERR, "%s:%d>> ====\n", __func__, __LINE__);
+    //配置数据的数据源
+    struct AjFrameHandlerSdk *ajsdk = NewAjFrameHandlerSdk();
+    if (!ajsdk) {
+        QnDemoPrint(DEMO_ERR, "%s:%d>>> Create AjFrameHandlerSdk fail.\n", __func__, __LINE__);
+        return QN_FAIL;
+    } 
+    ajsdk->base.ops->Init(&ajsdk->base);
+    struct RtmpConf *rtmpcfg = NewRtmpConf(NULL);
+    if (!rtmpcfg) {
+        QnDemoPrint(DEMO_ERR, "%s:%d>> Create RtmpConf fail.\n", __func__, __LINE__);
+        goto RELEASE_AJFRAMEHANDLERSDK;
+    }
+    rtmpcfg->base.ops->GetConf(&rtmpcfg->base);
+    QnDemoPrint(DEMO_ERR, "%s:%d>> rtmpcfg->url:%s\n", __func__, __LINE__, &rtmpcfg->url[0]);
+    //注册媒体数据发送句柄
+    struct RtmpFrameHandler *rtmphandler = NewRtmpFrameHandler(rtmpcfg);
+    if (!rtmphandler) {
+        QnDemoPrint(DEMO_ERR, "%s:%d>> Create RtmpFrameHandler fail.\n", __func__, __LINE__);
+        goto RELEASE_RTMPCONF;
+    }
+    ajsdk->base.ops->Register(&ajsdk->base, 0, rtmphandler->base.ops->SendVideo);   //注册rtmp发送函数
+    ajsdk->base.ops->Register(&ajsdk->base, 1, rtmphandler->base.ops->SendAudio);
+    //打开媒体数据源
+    ajsdk->base.ops->Start(&ajsdk->base);
 
-	return 0;
+
+
+    //开启心跳
+    BeatInit();
+    BeatStart();
+    for (;;) {
+        usleep(100);
+    }
+    BeatStop();
+    ajsdk->base.ops->Stop(&ajsdk->base);
+
+    DeleteRtmpHandler(rtmphandler);
+RELEASE_RTMPCONF:
+    ajsdk->base.ops->Release(&ajsdk->base);
+    DeleteRtmpConf(rtmpcfg);
+RELEASE_AJFRAMEHANDLERSDK:
+    DeleteAjFrameHandlerSdk(ajsdk);
+
+    return QN_SUCCESS;
 }

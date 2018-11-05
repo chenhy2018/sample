@@ -2,100 +2,108 @@
 // Created by chenh on 2018/7/20.
 //
 #include <pthread.h>
-#include "sdk_interface.h"
-#include "QnCommon.h"
-#include "QnMqtt.h"
 #include <sys/time.h>
-#include "ajSdk.h"
+#include "QnCommon.h"
+#include "QnConf.h"
+#include "QnMqttConf.h"
 #include "QnMqtt.h"
-#include "QnRtmp.h"
 
-#define HOST "47.105.118.51"
+
 
 QnMqttRegisterContext gMqttCtx;
 static int gMqttState = 1;
 int gMqttAlreadyConnecgted = 0;
-char gTopic[256] = "test1";
+
+struct mqttRuntime gMqttRt = {};
 
 Event *NewEvent()
 {
-    return (Event *)malloc(sizeof(Event));
+    Event *pEvent =  (Event *)malloc(sizeof(Event));
+    return pEvent;
 }
-
-void DeleteEvent(IN Event *_pEvent)
+void DelEvent(Event *event)
 {
-    if (_pEvent) {
-        free(_pEvent);
+    if (event) {
+        free(event);
     }
 }
 
-//Qn mqtt 建立连接，并注册账号
-int QnMqttInit()
+int qn_sdk_init(struct MqttConf *mqttCfg)
 {
-    char id[256] = { 0 };
-    char passwd[64] = { 0 };
-    char *host = HOST;
-
-    //获取mqtt连接建立用到的id和pss
-    GetStremId( id );
-    GetServerAddr( passwd );
-    DBG_LOG("passwd = %s\n", passwd );
-    
-    //初始化 mqtt sdk
-    if (InitSDK(NULL, 0) != RET_OK) {
-        QnDemoPrint(DEMO_WARNING, "%s[%d] Init Qn SDK failed.\n", __func__, __LINE__);
+    if (!mqttCfg) {
         return QN_FAIL;
     }
 
-    //账号注册
-    gMqttCtx.accountId = Register( id, passwd, NULL, host );
-    usleep(600);
-
+    if (InitSDK(NULL, 0) != QN_SUCCESS) {
+        QnDemoPrint(DEMO_WARNINIG, "%s[%d] Init Qn SDK fail.\n", __func__, __LINE__);
+        return QN_FAIL;
+    } 
+    gMqttRt.account = Register(&mqttCfg->ua[0], &mqttCfg->pass[0], NULL, &mqttCfg->host[0]);
     return QN_SUCCESS;
 }
 
-//去初始化
-void QnMqttRelease()
+void qn_sdk_uninit()
 {
-    free(gMqttCtx.id);
-    free(gMqttCtx.password);
-    free(gMqttCtx.sigHost);
-    free(gMqttCtx.mediaHost);
-    free(gMqttCtx.imHost);
     UninitSDK();
-    QnDemoPrint(DEMO_INFO, "QnMqttRelease.......\n");
 }
 
-/* reverse:  reverse string s in place */
-void reverse(char s[])
+static void *mqttPubHandler(void *param)
 {
-    int i, j;
-    char c;
 
-    for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
-        c = s[i];
-        s[i] = s[j];
-        s[j] = c;
+}
+
+static void *mqttSubHandler(void *param)
+{
+    ErrorID ret = 0;
+    struct mqttRuntime *mqttRt = (struct mqttRuntime *)param;
+    Event *mqttEvent;
+
+    while (1) {
+        mqttEvent = NewEvent();
+        if (mqttEvent) {
+            break;
+        }
+    }   
+
+    while (1) {
+
+        ret = PollEvent(mqttRt->id, &mqttEvent->type, &mqttEvent, 100);
+        if (ret >= RET_MEM_ERROR) {
+            QnDemoPrint(DEMO_ERR, "%s[%d]PollEvent error, ret = %d\n", __func__, __LINE__, ret);
+            return NULL;
+        }
+        if (ret == RET_RETRY) {
+            continue;
+        }
+
+       switch (mqttEvent->type) {
+           case EVENT_CALL:
+            {
+                CallEvent *pCallEvent = &(pEvent->body.callEvent);
+                if (pCallEvent->status == CALL_STATUS_INCOMING) {
+                    AnswerCall(gMqttCtx.accountId, pCallEvent->callID);
+                }
+                if (pCallEvent->status == CALL_STATUS_ERROR
+                    || pCallEvent->status == CALL_STATUS_HANGUP) {
+                    QnDemoPrint(DEMO_INFO, "%s[%d] CallEvent :CALL_STATUS_ERROR\n", __func__, __LINE__);
+                }
+                if (pCallEvent->status == CALL_STATUS_ESTABLISHED) {
+                    QnDemoPrint(DEMO_INFO, "%s[%d] CallEvent “:CALL_STATUS_ESTABLISHED\n", __func__, __LINE__);
+                }
+                break;
+            }
+           case EVENT_MESSAGE:
+            {
+                break;
+            }
+           default:
+            {
+                break;
+            }
+       }
     }
+
 }
-
-void itoa(int n, char s[])
-{
-    int i, sign;
-
-    if ((sign = n) < 0)  /* record sign */
-        n = -n;          /* make n positive */
-    i = 0;
-    do {       /* generate digits in reverse order */
-        s[i++] = n % 10 + '0';   /* get next digit */
-    } while ((n /= 10) > 0);     /* delete it */
-    if (sign < 0)
-        s[i++] = '-';
-    s[i] = '\0';
-    reverse(s);
-}
-
-//mqtt 事务线程
 static void *MqttHandler(void *param)
 {
     EventType type;
@@ -194,17 +202,44 @@ static void *MqttHandler(void *param)
     return NULL;
 }
 
-//创建mqtt pub线程
-void QnMqttStart()
+void mqtt_start()
 {
-    pthread_t mqttPth;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_t mqttPTr, mqttSTr;
+    pthread_attr_t mqttPTrAttr;
+    pthread_attr_init(&mqttPTrAttr);
+    pthread_attr_serdetachstate(&mqttPTrAttr, PTHREAD_CREATE_DETACHED);
 
-    gMqttCtx.sendFlag = 0;
-    gMqttCtx.timeCount = 0;
-    gMqttCtx.callId = 0;
-    pthread_create(&mqttPth, &attr, MqttHandler, (void *)&gMqttCtx);
+    pthread_create(&mqttPTr, &mqttPTrAttr, mqttPubHandler, NULL);
+    pthread_create(&mqttSTr, &mqttPTrAttr, mqttSubHandler, NULL);
 }
+
+/* reverse:  reverse string s in place */
+void reverse(char s[])
+{
+    int i, j;
+    char c;
+
+    for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
+        c = s[i];
+        s[i] = s[j];
+        s[j] = c;
+    }
+}
+
+void itoa(int n, char s[])
+{
+    int i, sign;
+
+    if ((sign = n) < 0)  /* record sign */
+        n = -n;          /* make n positive */
+    i = 0;
+    do {       /* generate digits in reverse order */
+        s[i++] = n % 10 + '0';   /* get next digit */
+    } while ((n /= 10) > 0);     /* delete it */
+    if (sign < 0)
+        s[i++] = '-';
+    s[i] = '\0';
+    reverse(s);
+}
+
 
